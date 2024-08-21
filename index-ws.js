@@ -1,7 +1,6 @@
 const express = require('express');
 const server = require('http').createServer();
 const app = express();
-const PORT = 8000;
 
 app.get('/', function (req, res) {
   res.sendFile('index.html', { root: __dirname });
@@ -9,8 +8,14 @@ app.get('/', function (req, res) {
 
 server.on('request', app);
 
-server.listen(PORT, function () {
-  console.log('Listening on ' + PORT);
+process.on('SIGINT', () => {
+  server.close(() => {
+    shutdownDB();
+  });
+});
+
+server.listen(8000, function () {
+  console.log('Listening on 8000');
 });
 
 /** Websocket **/
@@ -23,6 +28,10 @@ wss.on('connection', function connection(ws) {
 
   console.log('clients connected: ', numClients);
 
+  // Log number of visitors at current moment
+  db.run(`INSERT INTO visitors (count, time)
+    VALUES (${numClients}, datetime('now'))`);
+
   wss.broadcast(`Current visitors: ${numClients}`);
 
   if (ws.readyState === ws.OPEN) {
@@ -34,9 +43,7 @@ wss.on('connection', function connection(ws) {
     console.log('A client has disconnected');
   });
 
-  ws.on('error', function error() {
-    //
-  });
+  ws.on('error', function error() {});
 });
 
 /**
@@ -51,3 +58,30 @@ wss.broadcast = function broadcast(data) {
   });
 };
 /** End Websocket **/
+
+/** Database stuff **/
+
+const sqlite3 = require('sqlite3').verbose();
+const db = new sqlite3.Database(':memory:');
+
+// .seralize ensures DB is set up before any queries
+db.serialize(() => {
+  db.run(`CREATE TABLE visitors (
+      count INTEGER,
+      time TEXT
+      )`);
+});
+
+function getCounts() {
+  db.each('SELECT * FROM visitors', (err, row) => {
+    console.log(row);
+  });
+}
+
+function shutdownDB() {
+  getCounts();
+  console.log('shutting down DB');
+  db.close();
+}
+
+/** End Database stuff **/
